@@ -27,8 +27,8 @@ urlpatterns = [
 
     # order-history
     path('checkout/', OrderCheckoutView.as_view(), name='checkout'),
-    path('checkout-page/', checkout_page, name='checkout'),
-    path('cart/checkout/<int:order_id>/', checkout_view, name='checkout-page'),
+    # path('checkout-page/', checkout_page, name='checkout'),
+    # path('cart/checkout/<int:order_id>/', checkout_view, name='checkout-page'),
     path('order/history/', OrderHistioryView.as_view(), name='order-history'),
     path('order/details/<int:pk>/', OrderDetailView.as_view(), name='order-details'),
     
