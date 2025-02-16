@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Checkout</title>
+</head>
+<body>
+    <h2>Proceed to Payment</h2>
+
+    {% if error %}
+        <p style="color: red;">{{ error }}</p>
+    {% endif %}
+
+    <p>Total Amount: ₹{{ total_price }}</p>
+
+    <form method="POST" action="{% url 'products:checkout' %}">
+        {% csrf_token %}
+        <button type="submit">Proceed to Payment</button>
+    </form>
+</body>
+</html>

@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Checkout</title>
+    <script src="https://js.stripe.com/v3/"></script>
+</head>
+
+<body>
+
+    <h2>Proceed to Payment</h2>
+    <button id="pay-button">Pay Now</button>
+
+    <script>
+        var stripe = Stripe("pk_test_51MubtpSEFq3ydNBsd41h9uRU63HqeeJqkQyEZxaU2zj3aGLHraTexlqq6TQc6EQwy7q0VegjLphaH5Dvjz1mj7AC00QRwe0teo");  // Add your public key from settings.py
+
+        let token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzM5NjM3MDU0LCJpYXQiOjE3Mzk2MzE3NjIsImp0aSI6ImFmMzA5NmJmYjlkZDRkZDJiNjllYjBlNDk3ZjM4MjIyIiwidXNlcl9pZCI6MzR9.m3-Lc0P1KpqoGAyYpulTZ-N2kQ3ziq0Wokg46UbBkRY";
+
+
+        async function initializePayment() {
+            const response = await fetch("/api/products/checkout/", {
+                method: "POST",
+                headers: {
+                    "Authorization": `Bearer ${token}`,
+                    "Content-Type": "application/json"
+                }
+            });
+            const data = await response.json();
+
+            if (!data.payment_intent.client_secret) {
+                document.getElementById("error-message").innerText = "Error initializing payment.";
+                return;
+            }
+
+            const clientSecret = data.payment_intent.client_secret;
+
+            const elements = stripe.elements();
+            const paymentElement = elements.create("payment");
+            paymentElement.mount("#payment-element");
+
+            const form = document.getElementById("payment-form");
+            form.addEventListener("submit", async (event) => {
+                event.preventDefault();
+                document.getElementById("submit").disabled = true;
+
+                const { error, paymentIntent } = await stripe.confirmPayment({
+                    elements,
+                    confirmParams: {
+                        return_url: "http://127.0.0.1:8000/api/products/payment-success/", // Redirect after success
+                    }
+                });
+
+                if (error) {
+                    document.getElementById("error-message").innerText = error.message;
+                    document.getElementById("submit").disabled = false;
+                }
+            });
+        }
+
+        initializePayment();
+    </script>
+
+</body>
+
+</html>
