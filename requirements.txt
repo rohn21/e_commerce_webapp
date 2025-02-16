@@ -17,3 +17,5 @@ sendgrid==3.6.5
 sendgrid-django==4.2.0
 sqlparse==0.5.3
 urllib3==2.3.0
+stripe==11.5.0
+python-dotenv==1.0.1
