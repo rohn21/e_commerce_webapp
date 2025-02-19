@@ -1,6 +1,5 @@
 from django.http import JsonResponse
-from django.shortcuts import get_object_or_404, render, redirect
-from django.urls import reverse
+from django.shortcuts import render
 from rest_framework import generics, views, viewsets, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -12,17 +11,22 @@ from rest_framework import filters
 from accounts.permissions import IsOwnerOrReadonly
 from products.models import (Category, Subcategory,
                              Product, CartItem, Rating,
-                             OrderItem, Order,
-                             Wishlist)
+                             OrderItem, Order, Wishlist,
+                             Coupon)
 from products.serializers import (CategorySerializer, SubCategorySerializer,
                                   ProductSerializer, ProductRatingSerializer,
                                   CartItemSerializer,
                                   OrderSerializer, OrderItemSerializer,
-                                  WishlistSerializer)
+                                  WishlistSerializer, CouponSerializer)
 from products.filters import ProductFilter
 from django.conf import settings
+from django.urls import reverse
+from django.views.decorators.csrf import csrf_exempt
 from django.views.generic import TemplateView
+from decimal import Decimal, ROUND_HALF_UP
 import stripe
+
+stripe.api_key = settings.STRIPE_SECRET_KEY
 
 
 # Create your views here.
@@ -152,83 +156,7 @@ class ClearCartView(views.APIView):
         cart_items.delete()
         return Response({"detail": "Removed all items from the cart"}, status=status.HTTP_204_NO_CONTENT)
 
-
 # checkout
-# class OrderCheckoutView(generics.GenericAPIView):
-#     serializer_class = OrderSerializer
-#     authentication_classes = [JWTAuthentication]
-#     permission_classes = [IsAuthenticated]
-
-#     def post(self, request, *args, **kwargs):
-#         user = request.user
-#         cart_items = CartItem.objects.filter(user=user)
-
-#         if not cart_items.exists():
-#             return Response({'detail': 'No items in cart'}, status=status.HTTP_400_BAD_REQUEST)
-
-#         total_price = sum(item.product.price * item.quantity for item in cart_items)
-
-#         order = Order.objects.create(user=user, total_price=total_price, status=Order.CHECKOUT)
-        
-#         line_items = []
-
-#         for item in cart_items:
-#             OrderItem.objects.create(
-#                 order=order,
-#                 product=item.product,
-#                 quantity=item.quantity,
-#                 price=item.product.price
-#             )
-#             line_items.append({
-#                 'price_data': {
-#                     'currency': 'inr',  # INR for India-based payments
-#                     'product_data': {'name': item.product.name},  # Use actual product name
-#                     'unit_amount': int(item.product.price * 100),  # Convert to paisa
-#                 },
-#                 'quantity': item.quantity,  # Use actual quantity from cart
-#             })
-
-#         cart_items.delete()  # empty cart once checkout
-#         key = settings.STRIPE_SECRET_KEY
-#         stripe.api_key = settings.STRIPE_SECRET_KEY
-#         print(key)
-        
-#         try:
-#             # Create Stripe Checkout Session
-#             session = stripe.checkout.Session.create(
-#                 payment_method_types=['card'],
-#                 line_items=line_items,  # Actual cart items
-#                 mode='payment',
-#                 success_url=request.build_absolute_uri('/payment-success/'),
-#                 cancel_url=request.build_absolute_uri('/checkout-failed/'),
-#                 metadata={'order_id': order.id}
-#                 # line_items=[
-#                 #     {
-#                 #         'price_data': {
-#                 #             'currency': 'inr',
-#                 #             'product_data': {'name': 'Your Order'},
-#                 #             'unit_amount': int(total_price * 100),  # Convert to paisa
-#                 #         },
-#                 #         'quantity': 1,
-#                 #     }
-#                 # ],
-#                 # mode='payment',
-#                 # success_url=request.build_absolute_uri('/payment-success/'),
-#                 # cancel_url=request.build_absolute_uri('/checkout-failed/'),
-#                 # metadata={'order_id': order.id}
-#             )
-
-#             order.payment_intent_id = session.id
-#             order.save()
-
-#             return Response({"checkout_url": session.url}, status=status.HTTP_201_CREATED) 
-        
-#         except stripe.error.StripeError as e:
-#             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-#         except Exception as e:
-#             return Response({"error": "Something went wrong. Please try again."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)  
-        
 class OrderCheckoutView(generics.GenericAPIView):
     serializer_class = OrderSerializer
     authentication_classes = [JWTAuthentication]
@@ -241,131 +169,143 @@ class OrderCheckoutView(generics.GenericAPIView):
         if not cart_items.exists():
             return Response({"error": "No items in cart"}, status=status.HTTP_400_BAD_REQUEST)
 
+        coupon_code = request.data.get('coupon_code')
+        coupon = None
+        discount_amount = Decimal("0.00")
+
+        if coupon_code:
+            try:
+                coupon = Coupon.objects.get(coupon_code=coupon_code)
+                discount_amount = coupon.discount_value
+            except Coupon.DoesNotExist:
+                return JsonResponse({"error": "Invalid coupon code."}, status=400)
+            except Exception as e:
+                return JsonResponse({"error": f"Error validating coupon: {e}"}, status=400)
+
         stripe.api_key = settings.STRIPE_SECRET_KEY
 
         line_items = []
-        total_price = 0
+        total_price = Decimal("0.00")
 
         for item in cart_items:
+            price = Decimal(item.product.price)
+            discounted_price = price
+            print(price)
+            if discount_amount > 0:
+                if coupon.discount_type == 'percentage':
+                    discounted_price = price - (price * discount_amount)
+                    print(discounted_price)
+                elif coupon.discount_type == 'fixed':
+                    discounted_price = price - discount_amount
+                    print(discounted_price)
+                else:
+                    print("Invalid Choice")
+
+                if discounted_price < 0:
+                    discounted_price = Decimal("0.00")
+            unit_amount = int(discounted_price * 100)
+
             line_items.append({
                 "price_data": {
-                    "currency":"inr",
-                    "unit_amount": int(item.product.price * 100),  # INR to Paisa
+                    "currency": "inr",
+                    "unit_amount": unit_amount,
                     "product_data": {
-                        "name": item.product.name
+                        "name": item.product.name,
+                        # "images": [request.build_absolute_uri(item.product.image.url)] if item.product.image else [],
                     }
                 },
                 "quantity": item.quantity,
             })
-            total_price += item.product.price * item.quantity
+            # total_price += item.product.price * item.quantity
+            total_price += discounted_price * item.quantity
+            print({"total_price": total_price})
+        total_price = total_price.quantize(Decimal("0.00"), ROUND_HALF_UP)
+        print({"total_price": total_price})
 
-        # Create an Order
-        order = Order.objects.create(user=user, total_price=total_price, status=Order.CHECKOUT)
+        if total_price < 0:  # Prevent negative total_price
+            total_price = Decimal("0.00")
+
+        order = Order.objects.create(user=user, total_price=total_price, status=Order.CHECKOUT, coupon=coupon)
 
         for item in cart_items:
-            OrderItem.objects.create(order=order, product=item.product, quantity=item.quantity, price=item.product.price)
+            price = Decimal(item.product.price)
+            discount_price = price
+            if discount_amount > 0:
+                if coupon.discount_type == 'percentage':
+                    discount_price = price - (price * discount_amount)
+                    print(discount_price)
+                elif coupon.discount_type == 'fixed':
+                    discount_price = price - discount_amount
+                    print(discount_price)
+                else:
+                    print("Invalid Choice")
+                discount_price = discount_price.quantize(Decimal("0.00"), ROUND_HALF_UP)
+                print(discount_price)
+            OrderItem.objects.create(order=order, product=item.product, quantity=item.quantity, price=discount_price)
+        cart_items.delete()
 
-        cart_items.delete()  # Empty the cart after checkout
-
-        # Create Stripe Checkout Session for INR Payments
         try:
             checkout_session = stripe.checkout.Session.create(
-                payment_method_types=["card",],  # Only INR payment methods
+                payment_method_types=["card", ],
                 line_items=line_items,
                 mode="payment",
                 currency="inr",
-                success_url=request.build_absolute_uri(reverse("products:payment_success")) + "?session_id={CHECKOUT_SESSION_ID}",
+                # success_url=request.build_absolute_uri(reverse("products:payment_success")) + f"?session_id={checkout_session['id']}",
+                success_url=request.build_absolute_uri(
+                    reverse("products:payment_success")) + "?session_id={CHECKOUT_SESSION_ID}",
                 cancel_url=request.build_absolute_uri(reverse("products:payment_cancel")),
-                metadata={"order_id": order.id},
+                metadata={"order_id": order.id, "coupon_code": coupon_code},
             )
         except stripe.error.StripeError as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-        order.payment_intent_id = checkout_session["id"]
+        order.stripe_session_id = checkout_session["id"]
         order.save()
 
-        return Response({"checkout_url": checkout_session.url}, status=status.HTTP_201_CREATED) 
-    
-class StripeWebhookView(APIView):
-    """Handles Stripe Webhook Events"""
-    permission_classes = [AllowAny]  # Webhooks don't require authentication
+        return Response({"checkout_url": checkout_session.url}, status=status.HTTP_201_CREATED)
 
-    def post(self, request, *args, **kwargs):
-        payload = request.body
-        sig_header = request.headers.get("Stripe-Signature")
-        endpoint_secret = settings.STRIPE_WEBHOOK_SECRET  # Store in settings.py
+class PaymentSuccessView(generics.UpdateAPIView):
+    serializer_class = OrderSerializer
+    queryset = Order.objects.all()
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+    http_method_names = ['patch']
+
+    def patch(self, request, *args, **kwargs):
+        session_id = request.GET.get('session_id')
+
+        if not session_id:
+            return Response({"error": "Session ID missing"}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            event = stripe.Webhook.construct_event(
-                payload, sig_header, endpoint_secret
-            )
-        except ValueError:
-            return JsonResponse({"error": "Invalid payload"}, status=400)
-        except stripe.error.SignatureVerificationError:
-            return JsonResponse({"error": "Invalid signature"}, status=400)
+            checkout_session = stripe.checkout.Session.retrieve(session_id)
+            order_id = checkout_session.metadata.get('order_id')
+            payment_status = checkout_session.payment_status
 
-        # Handle Payment Success Event
-        if event["type"] == "checkout.session.completed":
-            session = event["data"]["object"]
-            order_id = session.get("metadata", {}).get("order_id")
-
-            if order_id:
+            if payment_status == 'paid':
                 try:
-                    order = Order.objects.get(id=order_id)
-                    order.status = "PAID" 
-                    order.save()
+                    order = self.queryset.get(pk=order_id)
+                    order.payment_status = 'completed'
+                    order.status = Order.CHECKOUT
+
+                    serializer = self.get_serializer(order, data=request.data, partial=True)
+                    if serializer.is_valid():
+                        serializer.save()
+                        return Response(serializer.data, status=status.HTTP_200_OK)
+                    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
                 except Order.DoesNotExist:
-                    return JsonResponse({"error": "Order not found"}, status=404)
-
-        return JsonResponse({"status": "success"}, status=200)
-
-from django.views.decorators.csrf import csrf_exempt
-from django.shortcuts import render
-def checkout_page(request):
-    return render(request, "products/checkout.html", {
-        "STRIPE_PUBLIC_KEY": settings.STRIPE_PUBLISHABLE_KEY
-    })
-
-@csrf_exempt
-def payment_success(request):
-    return render(request, "products/payment_success.html")
-
-
-@csrf_exempt
-def payment_cancel(request):
-    return render(request, "products/payment_cancel.html")
-
-class PaymentConfirmationView(APIView):
-    def post(self, request, *args, **kwargs):
-        # Receive the payment intent ID and the payment method ID from frontend
-        payment_intent_id = request.data.get('payment_intent_id')
-        payment_method_id = request.data.get('payment_method_id')
-
-        if not payment_intent_id or not payment_method_id:
-            return Response({'detail': 'Missing payment details'}, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            # Confirm the PaymentIntent on Stripe
-            payment_intent = stripe.PaymentIntent.confirm(
-                payment_intent_id,
-                payment_method=payment_method_id
-            )
-
-            # Check if payment was successful
-            if payment_intent['status'] == 'succeeded':
-                # Payment was successful, update order status
-                order = Order.objects.get(payment_intent_id=payment_intent_id)
-                order.status = Order.Completed  # Update status to "Paid"
-                order.save()
-
-                return Response({'detail': 'Payment successful', 'order_id': order.id}, status=status.HTTP_200_OK)
+                    return Response({"error": "Order not found"}, status=status.HTTP_404_NOT_FOUND)
             else:
-                return Response({'detail': 'Payment failed'}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({"payment_status": payment_status},
+                                status=status.HTTP_202_ACCEPTED)
 
         except stripe.error.StripeError as e:
-            return Response({'detail': f'Stripe error: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
-        except Order.DoesNotExist:
-            return Response({'detail': 'Order not found'}, status=status.HTTP_404_NOT_FOUND)
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+# class PaymentConfirmationView(APIView):
 
 
 # class CreateCheckoutSession(APIView):
@@ -428,23 +368,37 @@ class OrderDetailView(generics.RetrieveUpdateAPIView):
         return super().patch(request, *args, **kwargs)
 
 
-from django.utils.decorators import method_decorator
+class CheckoutPage(TemplateView):
+    template_name = 'products/checkout.html'
+
+
+# @csrf_exempt
+# def payment_success(request):
+#     session_id = request.GET.get('session_id')
+#
+#     if not session_id:
+#         return JsonResponse({"error": "Session ID missing"}, status=400)
+#
+#     try:
+#         checkout_session = stripe.checkout.Session.retrieve(session_id)
+#
+#         # can also retrieve more details like payment status, customer info, etc.
+#         order_id = checkout_session.metadata.get('order_id')
+#         payment_status = checkout_session.payment_status
+#
+#         # Process the order and confirm payment success
+#         if payment_status == 'paid':
+#
+#             pass
+#
+#         return render(request, "products/payment_success.html", {"order_id": order_id, "payment_status": payment_status})
+#     except stripe.error.StripeError as e:
+#         return JsonResponse({"error": str(e)}, status=400)
 
 @csrf_exempt
-def checkout_view(request, order_id):
-    stripe.api_key = settings.STRIPE_SECRET_KEY
-    # Call checkout API to get client_secret
-    response = request.session.get("checkout_response", {})
-    order = get_object_or_404(Order, id=order_id)
-    
-    if "client_secret" not in response:
-        return render(request, "products/checkout.html", {"error": "Client secret not found. Try again."})
+def payment_cancel(request):
+    return render(request, "products/payment_cancel.html")
 
-    return render(request, "products/checkout.html", {
-        "client_secret": response["client_secret"],
-        "total_price": response.get("total_price", 0),
-        "STRIPE_PUBLIC_KEY": settings.STRIPE_PUBLIC_KEY
-    })
 
 class WishlistAPIView(viewsets.ModelViewSet):
     serializer_class = WishlistSerializer
@@ -455,3 +409,10 @@ class WishlistAPIView(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         user = self.request.user
         serializer.save(user=user)
+
+
+class CouponAPIView(viewsets.ModelViewSet):
+    serializer_class = CouponSerializer
+    queryset = Coupon.objects.all()
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]

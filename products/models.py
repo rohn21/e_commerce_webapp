@@ -1,6 +1,9 @@
 from django.db import models
 from django.contrib.auth import get_user_model
+from requests import delete
+
 from utils.custom_functions import get_product_image
+from django.utils.translation import gettext_lazy as _
 
 User = get_user_model()
 
@@ -61,6 +64,52 @@ class CartItem(models.Model):
     def __str__(self):
         return f"{self.product.name} x {self.quantity} in {self.user.username}'s cart"
 
+class Coupon(models.Model):
+    # review
+    DISCOUNT_TYPE = [
+        ('fixed', 'Fixed amount'),
+        ('percentage', 'Percentage'),
+    ]
+
+    coupon_code = models.CharField(max_length=12, unique=True)
+    discount_value = models.DecimalField(max_digits=5, decimal_places=2)
+    max_discount = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    expires_at = models.DateTimeField()
+    is_active = models.BooleanField(default=True)
+    discount_type = models.CharField(max_length=30, choices=DISCOUNT_TYPE)
+    usage = models.IntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'coupon'
+
+    def __str__(self):
+        return self.coupon_code
+
+class Address(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='address')
+    city = models.CharField(max_length=100)
+    street = models.CharField(max_length=300)
+    state = models.CharField(max_length=150)
+    pincode = models.CharField(max_length=20)
+    is_default = models.BooleanField(default=False)
+
+    class Meta:
+        db_table = 'address'
+
+    def __str__(self):
+        return self.user.username
+
+class ShippingMethod(models.Model):
+    name = models.CharField(max_length=100)
+    price = models.PositiveIntegerField()
+    description = models.TextField()
+
+    class Meta:
+        db_table = 'shipping_method'
+
+    def __str__(self):
+        return self.name
 
 # can generate order_id
 class Order(models.Model):
@@ -83,10 +132,14 @@ class Order(models.Model):
     ]
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='orders')
-    total_price = models.PositiveIntegerField()
+    coupon = models.ForeignKey(Coupon, on_delete=models.SET_NULL, related_name='orders', blank=True, null=True)
+    total_price = models.PositiveIntegerField(null=True, blank=True)
     status = models.CharField(max_length=10, choices=ORDER_STATUS, blank=True, null=True)
     payment_status = models.CharField(max_length=10, choices=PAYMENT_STATUS, blank=True, null=True)
     payment_intent_id = models.CharField(max_length=200, blank=True, null=True)
+    stripe_session_id = models.CharField(max_length=200, blank=True, null=True)
+    shipping_method = models.ForeignKey(ShippingMethod, on_delete=models.CASCADE, related_name='orders', blank=True,null=True)
+    address = models.ForeignKey(Address, on_delete=models.CASCADE, related_name='orders', blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -94,7 +147,6 @@ class Order(models.Model):
 
     def __str__(self):
         return f"{self.user.username} - {self.status}"
-
 
 class OrderItem(models.Model):
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='order_items')
@@ -108,21 +160,6 @@ class OrderItem(models.Model):
     def __str__(self):
         return f"{self.product.name} x {self.quantity} in {self.product.user.username}'s order"
 
-class Address(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='address')
-    city = models.CharField(max_length=100)
-    street = models.CharField(max_length=300)
-    state = models.CharField(max_length=150)
-    pincode = models.CharField(max_length=20)
-    is_default = models.BooleanField(default=False)
-
-    class Meta:
-        db_table = 'address'
-
-    def __str__(self):
-        return self.user.username
-
-
 class Rating(models.Model):
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='ratings')
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='ratings')
@@ -135,7 +172,6 @@ class Rating(models.Model):
     def __str__(self):
         return self.rating
 
-
 class Wishlist(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='wishlists')
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='wishlists')
@@ -145,3 +181,4 @@ class Wishlist(models.Model):
 
     def __str__(self):
         return f"{self.product.name} - {self.product.ratings}"
+

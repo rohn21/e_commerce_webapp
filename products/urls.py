@@ -4,8 +4,8 @@ from products.views import (CategoryViewSet, SubCategoryViewSet,
                             ProductRatingAPIView,
                             CartView, CartItemDetailView, ClearCartView,
                             OrderCheckoutView, OrderHistioryView, OrderDetailView,
-                            WishlistAPIView,payment_success, checkout_page,payment_cancel, StripeWebhookView,
-                            checkout_view)
+                            WishlistAPIView, PaymentSuccessView, payment_cancel,
+                            CheckoutPage, CouponAPIView)
 from rest_framework.routers import DefaultRouter
 
 app_name = 'products'
@@ -14,6 +14,7 @@ router = DefaultRouter()
 router.register(r'category', CategoryViewSet, basename='category')
 router.register(r'sub-category', SubCategoryViewSet, basename='subcategory')
 router.register(r'wishlist', WishlistAPIView, basename='wishlist')
+router.register(r'coupon', CouponAPIView, basename='coupon')
 
 urlpatterns = [
     # product
@@ -27,17 +28,16 @@ urlpatterns = [
 
     # order-history
     path('checkout/', OrderCheckoutView.as_view(), name='checkout'),
-    path('checkout-page/', checkout_page, name='checkout'),
-    path('cart/checkout/<int:order_id>/', checkout_view, name='checkout-page'),
+    # path('cart/checkout/', CheckoutPage.as_view(), name='checkout-page'),
     path('order/history/', OrderHistioryView.as_view(), name='order-history'),
     path('order/details/<int:pk>/', OrderDetailView.as_view(), name='order-details'),
-    
-    path('payment-success/', payment_success, name='payment_success'),
-    path('payment-cancel/', payment_cancel, name='payment_cancel'),
-    
-    path("stripe/webhook/", StripeWebhookView.as_view(), name="stripe_webhook"),
+
+    # payment
+    path('payment/success/', PaymentSuccessView.as_view(), name='payment_success'),
+    path('payment/cancel/', payment_cancel, name= 'payment_cancel'),
 
     # product-rating
     path('ratings/', ProductRatingAPIView.as_view(), name='ratings'),
 ]
 urlpatterns += router.urls
+

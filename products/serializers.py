@@ -3,7 +3,8 @@ from django.contrib.auth import get_user_model
 from django.db.models import Avg
 from products.models import (Category, Subcategory,
                              Product, Rating, CartItem,
-                             OrderItem, Order, Wishlist)
+                             OrderItem, Order, Wishlist,
+                             Coupon)
 
 User = get_user_model()
 
@@ -111,4 +112,10 @@ class WishlistSerializer(serializers.ModelSerializer):
         if ratings.exists():
             return ratings.aggregate(average_rating=Avg('rating'))['average_rating']
         return None
+
+
+class CouponSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Coupon
+        fields = ['id', 'coupon_code', 'discount_value', 'max_discount', 'expires_at', 'is_active', 'discount_type', 'usage', 'created_at']
 
