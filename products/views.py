@@ -9,16 +9,18 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters
 from accounts.permissions import IsOwnerOrReadonly
+from accounts.models import Profile
 from products.models import (Category, Subcategory,
                              Product, CartItem, Rating,
                              OrderItem, Order, Wishlist,
-                             Coupon)
+                             Coupon, Address, ShippingMethod)
 from products.serializers import (CategorySerializer, SubCategorySerializer,
                                   ProductSerializer, ProductRatingSerializer,
                                   CartItemSerializer,
                                   OrderSerializer, OrderItemSerializer,
-                                  WishlistSerializer, CouponSerializer)
+                                  WishlistSerializer, CouponSerializer, AddressSerializer)
 from products.filters import ProductFilter
+from utils.custom_functions import generate_tracking_number
 from django.conf import settings
 from django.urls import reverse
 from django.views.decorators.csrf import csrf_exempt
@@ -27,9 +29,6 @@ from decimal import Decimal, ROUND_HALF_UP
 import stripe
 
 stripe.api_key = settings.STRIPE_SECRET_KEY
-
-
-# Create your views here.
 
 # category-view
 class CategoryViewSet(viewsets.ModelViewSet):
@@ -52,9 +51,7 @@ class SubCategoryViewSet(viewsets.ModelViewSet):
 
         if category_id:
             queryset = queryset.filter(category_id=category_id)
-
         return queryset
-
 
 # product-view
 class AddProductAPIView(generics.ListCreateAPIView):
@@ -83,7 +80,6 @@ class ProductDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
 
-
 class ProductRatingAPIView(generics.ListCreateAPIView):
     serializer_class = ProductRatingSerializer
     queryset = Rating.objects.all()
@@ -97,7 +93,6 @@ class ProductRatingAPIView(generics.ListCreateAPIView):
     # def get_queryset(self):
     #     user = self.request.user
     #     return user.ratings.all()
-
 
 # cart-view
 class CartView(generics.ListCreateAPIView):
@@ -127,7 +122,6 @@ class CartView(generics.ListCreateAPIView):
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-
 # cart_item-view
 class CartItemDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = CartItem.objects.all()
@@ -142,7 +136,6 @@ class CartItemDetailView(generics.RetrieveUpdateDestroyAPIView):
         if not cart_item:
             return CartItem(user=user, product_id=product_id, quantity=0)
         return cart_item
-
 
 # clear-cart
 class ClearCartView(views.APIView):
@@ -166,9 +159,43 @@ class OrderCheckoutView(generics.GenericAPIView):
         user = request.user
         cart_items = CartItem.objects.filter(user=user)
 
+        address = None
+        address_id = request.data.get('address_id')
+
+        shipping_method = None
+        shipping_method_id = request.data.get('shipping_method')
+
+        # address
+        if address_id:
+            try:
+                address = Address.objects.get(pk=address_id, user=user)
+                print(address)
+            except Address.DoesNotExist:
+                return Response({"error": "Address not found or does not belong to user"},
+                                status=status.HTTP_400_BAD_REQUEST)
+
+        if not address:
+            try:
+                default_address = user.profiles.address
+                if default_address:
+                    address = default_address
+                    print(address)
+                else:
+                    return Response({"error": "No address provided and no address found!!!"})
+            except Profile.DoesNotExist:
+                return Response({"error": "User Profile not found!"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # shipping_method
+        if shipping_method_id:
+            try:
+                shipping_method = ShippingMethod.objects.get(pk=shipping_method)
+            except ShippingMethod.DoesNotExist:
+                return Response({"error": "Shipping method for order not available."}, status=status.HTTP_400_BAD_REQUEST)
+
         if not cart_items.exists():
             return Response({"error": "No items in cart"}, status=status.HTTP_400_BAD_REQUEST)
 
+        # coupon_code
         coupon_code = request.data.get('coupon_code')
         coupon = None
         discount_amount = Decimal("0.00")
@@ -181,8 +208,6 @@ class OrderCheckoutView(generics.GenericAPIView):
                 return JsonResponse({"error": "Invalid coupon code."}, status=400)
             except Exception as e:
                 return JsonResponse({"error": f"Error validating coupon: {e}"}, status=400)
-
-        stripe.api_key = settings.STRIPE_SECRET_KEY
 
         line_items = []
         total_price = Decimal("0.00")
@@ -216,16 +241,16 @@ class OrderCheckoutView(generics.GenericAPIView):
                 },
                 "quantity": item.quantity,
             })
-            # total_price += item.product.price * item.quantity
+            # total_price += item.product.price * item.quantity #incorrect
             total_price += discounted_price * item.quantity
             print({"total_price": total_price})
         total_price = total_price.quantize(Decimal("0.00"), ROUND_HALF_UP)
         print({"total_price": total_price})
 
-        if total_price < 0:  # Prevent negative total_price
+        if total_price < 0:
             total_price = Decimal("0.00")
 
-        order = Order.objects.create(user=user, total_price=total_price, status=Order.CHECKOUT, coupon=coupon)
+        order = Order.objects.create(user=user, total_price=total_price, status=Order.CHECKOUT, coupon=coupon, address=address)
 
         for item in cart_items:
             price = Decimal(item.product.price)
@@ -248,6 +273,9 @@ class OrderCheckoutView(generics.GenericAPIView):
             checkout_session = stripe.checkout.Session.create(
                 payment_method_types=["card", ],
                 line_items=line_items,
+                # invoice_creation={
+                #     "enabled": True
+                # },
                 mode="payment",
                 currency="inr",
                 # success_url=request.build_absolute_uri(reverse("products:payment_success")) + f"?session_id={checkout_session['id']}",
@@ -305,34 +333,44 @@ class PaymentSuccessView(generics.UpdateAPIView):
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-# class PaymentConfirmationView(APIView):
+class PaymentConfirmationView(APIView):
+    authentication_classes = [JWTAuthentication]
 
+    def post(self, request):
+        session_id = request.data.get('session_id')  # Get session ID from request
 
-# class CreateCheckoutSession(APIView):
-#         def post(self, request):
-#             dataDict = dict(request.data)
-#             price = dataDict['price'][0]
-#             product_name = dataDict['product_name'][0]
-#             try:
-#                 checkout_session = stripe.checkout.Session.create(
-#                     line_items=[{
-#                         'price_data': {
-#                             'currency': 'usd',
-#                             'product_data': {
-#                                 'name': product_name,
-#                             },
-#                             'unit_amount': price
-#                         },
-#                         'quantity': 1
-#                     }],
-#                     mode='payment',
-#                     success_url=FRONTEND_CHECKOUT_SUCCESS_URL,
-#                     cancel_url=FRONTEND_CHECKOUT_FAILED_URL,
-#                 )
-#                 return redirect(checkout_session.url, code=303)
-#             except Exception as e:
-#                 print(e)
-#                 return e
+        if not session_id:
+            return Response({"error": "Session ID is required"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            session = stripe.checkout.Session.retrieve(session_id)
+
+            if session.payment_status == 'paid':
+                order_id = session.metadata.get('order_id')
+                if not order_id:
+                    return Response({"error": "Order ID is missing"}, status=status.HTTP_400_BAD_REQUEST)
+
+                try:
+                    order = Order.objects.get(pk=order_id)
+                except Order.DoesNotExist:
+                    return Response({"error": "Order not found"}, status=status.HTTP_404_NOT_FOUND)
+
+                order.payment_status = 'completed'
+                order.status = Order.SHIPPED
+                order.tracking_number = generate_tracking_number()
+                order.save()
+
+                return Response({"message": "Payment confirmed and order updated"}, status=status.HTTP_200_OK)
+
+            else:
+                return Response({"error": "Payment not successful"}, status=status.HTTP_400_BAD_REQUEST)
+
+        except stripe.error.StripeError as e:
+            print(f"Stripe Error: {e}")
+            return Response({"error": f"Stripe error: {e}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        except Exception as e:
+            print(f"Error retrieving session: {e}")
+            return Response({"error": f"Error: {e}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
 # order-history
 class OrderHistioryView(generics.ListAPIView):
@@ -342,9 +380,14 @@ class OrderHistioryView(generics.ListAPIView):
 
     def get_queryset(self):
         user = self.request.user
-        queryset = Order.objects.filter(user=user).order_by('-created_at')
-        return queryset
 
+        queryset = Order.objects.filter(user=user).order_by('-created_at')
+
+        order_status = self.request.query_params.get("status")
+
+        if order_status:
+            queryset = queryset.filter(status=order_status)
+        return queryset
 
 # order-detail and cancel
 class OrderDetailView(generics.RetrieveUpdateAPIView):
@@ -367,10 +410,8 @@ class OrderDetailView(generics.RetrieveUpdateAPIView):
 
         return super().patch(request, *args, **kwargs)
 
-
 class CheckoutPage(TemplateView):
     template_name = 'products/checkout.html'
-
 
 # @csrf_exempt
 # def payment_success(request):
@@ -399,7 +440,6 @@ class CheckoutPage(TemplateView):
 def payment_cancel(request):
     return render(request, "products/payment_cancel.html")
 
-
 class WishlistAPIView(viewsets.ModelViewSet):
     serializer_class = WishlistSerializer
     queryset = Wishlist.objects.all()
@@ -410,9 +450,24 @@ class WishlistAPIView(viewsets.ModelViewSet):
         user = self.request.user
         serializer.save(user=user)
 
-
 class CouponAPIView(viewsets.ModelViewSet):
     serializer_class = CouponSerializer
     queryset = Coupon.objects.all()
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+class AddressAPIView(generics.ListCreateAPIView):
+    serializer_class = AddressSerializer
+    queryset = Address.objects.all()
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def perform_create(self, serializer):
+        user = self.request.user
+        return serializer.save(user=user)
+
+class AddressDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
+    serializer_class = AddressSerializer
+    queryset = Address.objects.all()
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]

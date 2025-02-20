@@ -4,7 +4,7 @@ from django.db.models import Avg
 from products.models import (Category, Subcategory,
                              Product, Rating, CartItem,
                              OrderItem, Order, Wishlist,
-                             Coupon)
+                             Coupon, Address)
 
 User = get_user_model()
 
@@ -12,8 +12,9 @@ User = get_user_model()
 class CategorySerializer(serializers.ModelSerializer):
     class Meta:
         model = Category
-        fields = ['id', 'name', 'description', 'subcategory_set']
+        fields = ['id', 'name', 'description']
         # depth = 1
+
 
 class SubCategorySerializer(serializers.ModelSerializer):
     category = serializers.PrimaryKeyRelatedField(queryset=Category.objects.all())
@@ -22,9 +23,11 @@ class SubCategorySerializer(serializers.ModelSerializer):
         model = Subcategory
         fields = ['id', 'category', 'name', 'description']
 
+
 class ProductSerializer(serializers.ModelSerializer):
     category = serializers.PrimaryKeyRelatedField(queryset=Category.objects.all())
     subcategory = serializers.PrimaryKeyRelatedField(queryset=Subcategory.objects.all())
+
     # image = serializers.ListField(child=serializers.ImageField(), write_only=True, required=False)
 
     class Meta:
@@ -65,6 +68,7 @@ class ProductSerializer(serializers.ModelSerializer):
     #
     #     return instance
 
+
 class ProductRatingSerializer(serializers.ModelSerializer):
     class Meta:
         model = Rating
@@ -85,6 +89,7 @@ class CartItemSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Product quantity must be positive.!!!")
         return attrs
 
+
 class OrderItemSerializer(serializers.ModelSerializer):
     product = ProductSerializer()
     order = serializers.PrimaryKeyRelatedField(queryset=Order.objects.all())
@@ -93,12 +98,14 @@ class OrderItemSerializer(serializers.ModelSerializer):
         model = OrderItem
         fields = ['order', 'product', 'quantity', 'price']
 
+
 class OrderSerializer(serializers.ModelSerializer):
     order_items = OrderItemSerializer(many=True, read_only=True)
 
     class Meta:
         model = Order
         fields = ['id', 'user', 'created_at', 'total_price', 'status', 'order_items']
+
 
 class WishlistSerializer(serializers.ModelSerializer):
     product_review = serializers.SerializerMethodField()
@@ -119,3 +126,17 @@ class CouponSerializer(serializers.ModelSerializer):
         model = Coupon
         fields = ['id', 'coupon_code', 'discount_value', 'max_discount', 'expires_at', 'is_active', 'discount_type', 'usage', 'created_at']
 
+
+class AddressSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Address
+        fields = ['id', 'city', 'street', 'state', 'pincode', 'is_default']
+
+    def validate_pincode(self, attrs):
+        pincode = str(attrs)
+        if len(pincode) != 6:
+            raise serializers.ValidationError("Pincode must be 6 digits!!!")
+
+        if not pincode.isdigit():
+            raise serializers.ValidationError("Pincode must contains only digits.")
+        return attrs

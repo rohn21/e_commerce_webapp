@@ -4,7 +4,9 @@ from products.views import (CategoryViewSet, SubCategoryViewSet,
                             ProductRatingAPIView,
                             CartView, CartItemDetailView, ClearCartView,
                             OrderCheckoutView, OrderHistioryView, OrderDetailView,
-                            WishlistAPIView, PaymentSuccessView, payment_cancel,
+                            WishlistAPIView,
+                            PaymentSuccessView, payment_cancel, PaymentConfirmationView,
+                            AddressAPIView, AddressDetailAPIView,
                             CheckoutPage, CouponAPIView)
 from rest_framework.routers import DefaultRouter
 
@@ -35,9 +37,12 @@ urlpatterns = [
     # payment
     path('payment/success/', PaymentSuccessView.as_view(), name='payment_success'),
     path('payment/cancel/', payment_cancel, name= 'payment_cancel'),
+    path('payment/confirmation/', PaymentConfirmationView.as_view(), name= 'payment_confirmation'),
+
+    path('address/', AddressAPIView.as_view(), name= 'address'),
+    path('address/<int:pk>/', AddressDetailAPIView.as_view(), name= 'address-detail'),
 
     # product-rating
     path('ratings/', ProductRatingAPIView.as_view(), name='ratings'),
 ]
 urlpatterns += router.urls
-
