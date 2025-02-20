@@ -140,6 +140,7 @@ class Order(models.Model):
     stripe_session_id = models.CharField(max_length=200, blank=True, null=True)
     shipping_method = models.ForeignKey(ShippingMethod, on_delete=models.CASCADE, related_name='orders', blank=True,null=True)
     address = models.ForeignKey(Address, on_delete=models.CASCADE, related_name='orders', blank=True, null=True)
+    tracking_number = models.CharField(max_length=30, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
