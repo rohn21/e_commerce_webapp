@@ -1,3 +1,4 @@
+from django.db.models.fields import return_None
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from django.db.models import Avg
@@ -101,11 +102,17 @@ class OrderItemSerializer(serializers.ModelSerializer):
 
 class OrderSerializer(serializers.ModelSerializer):
     order_items = OrderItemSerializer(many=True, read_only=True)
+    applied_coupon = serializers.SerializerMethodField()
 
     class Meta:
         model = Order
-        fields = ['id', 'user', 'created_at', 'total_price', 'status', 'order_items']
+        fields = ['id', 'user', 'created_at', 'total_price', 'status', 'payment_status', 'order_items', 'applied_coupon']
 
+    def get_applied_coupon(self, attrs):
+        coupon = attrs.coupon
+        if coupon:
+            return coupon.coupon_code
+        return None
 
 class WishlistSerializer(serializers.ModelSerializer):
     product_review = serializers.SerializerMethodField()
