@@ -8,6 +8,7 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters
+
 from accounts.permissions import IsOwnerOrReadonly
 from accounts.models import Profile
 from products.models import (Category, Subcategory,
@@ -309,11 +310,14 @@ class PaymentSuccessView(generics.UpdateAPIView):
             checkout_session = stripe.checkout.Session.retrieve(session_id)
             order_id = checkout_session.metadata.get('order_id')
             payment_status = checkout_session.payment_status
+            payment_intent_id = checkout_session.payment_intent
+            print(payment_intent_id)
 
             if payment_status == 'paid':
                 try:
                     order = self.queryset.get(pk=order_id)
                     order.payment_status = 'completed'
+                    order.payment_intent_id = payment_intent_id
                     order.status = Order.CHECKOUT
 
                     serializer = self.get_serializer(order, data=request.data, partial=True)
@@ -404,9 +408,27 @@ class OrderDetailView(generics.RetrieveUpdateAPIView):
                 return Response({'details': "You cannot cancel the order once it shipped"},
                                 status=status.HTTP_400_BAD_REQUEST)
 
-            order.status = Order.CANCELLED
-            order.save()
-            return Response({'detail': "Order has been Cancelled"}, status=status.HTTP_206_PARTIAL_CONTENT)
+            if order.payment_intent_id:
+                try:
+                    payment_intent = stripe.PaymentIntent.retrieve(order.payment_intent_id)
+
+                    if payment_intent.status == 'succeeded':
+                        payment_refund = stripe.Refund.create(payment_intent=order.payment_intent_id)
+
+                        if payment_refund.status == 'succeeded':
+                            order.status = Order.CANCELLED
+                            order.save()
+                            return Response({'detail': "Order has been Cancelled"},
+                                            status=status.HTTP_206_PARTIAL_CONTENT)
+                        else:
+                            return Response({'detail': "Refund failed"}, status=status.HTTP_400_BAD_REQUEST)
+                    else:
+                        return Response({'detail': "Payment was not successfull, cannot refund!!!"}, status=status.HTTP_400_BAD_REQUEST)
+                except  stripe.error.StripeError as e:
+                    return Response({'details': f"Stripe error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            else:
+                return Response({'details': "No payment information found for this order."},
+                                status=status.HTTP_400_BAD_REQUEST)
 
         return super().patch(request, *args, **kwargs)
 
