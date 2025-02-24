@@ -22,7 +22,7 @@ User = get_user_model()
 
 class UserCreateAPIView(RegisterView):
     serializer_class = CustomUserSerializer
-    permission_classes = [permissions.AllowAny]v
+    permission_classes = [permissions.AllowAny]
 
     def perform_create(self, serializer):
         user = serializer.save()
