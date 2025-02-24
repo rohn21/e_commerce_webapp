@@ -22,7 +22,7 @@ User = get_user_model()
 
 class UserCreateAPIView(RegisterView):
     serializer_class = CustomUserSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.AllowAny]v
 
     def perform_create(self, serializer):
         user = serializer.save()
@@ -45,3 +45,8 @@ class ProfileAPIView(generics.RetrieveUpdateAPIView):
     serializer_class = UserDetailsSerializer
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsOwnerOrReadonly]
+
+    def get_object(self):
+        user = self.request.user
+        profile, created = Profile.objects.get_or_create(user=user)
+        return profile
