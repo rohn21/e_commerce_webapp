@@ -12,5 +12,5 @@ urlpatterns = [
     path('login/', LoginView.as_view(), name='rest_login'),
     path('logout/', LogoutView.as_view(), name='rest_logout'),
     path('register/', UserCreateAPIView.as_view(), name='rest_register'),
-    path('user/profile/<int:pk>/', ProfileAPIView.as_view(), name='user_profile'),
+    path('user/profile/', ProfileAPIView.as_view(), name='user_profile'),
 ]
