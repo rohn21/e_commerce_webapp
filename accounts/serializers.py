@@ -40,26 +40,29 @@ class UserProfileSerializer(serializers.ModelSerializer):
         model = Profile
         fields = ['id', 'email', 'first_name', 'last_name', 'is_email_verified', 'mobile_number', 'gender', 'profile_pic', 'date_of_birth']
 
+class UserSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = User
+        fields = ['id', 'email', 'first_name', 'last_name', 'username']
+        extra_kwargs = {'email': {'read_only': True}}
+
 class UserDetailsSerializer(serializers.ModelSerializer):
-    user = CustomUserSerializer()
-    is_email_verified = serializers.ReadOnlyField(source='user.is_email_verified')
+    user = UserSerializer(required=False)
+    is_email_verified = serializers.ReadOnlyField(source="user.is_email_verified")
 
     class Meta:
         model = Profile
-        fields = ['id', 'profile_pic', 'user', 'is_email_verified']
+        fields = ['id', 'profile_pic', 'user', 'is_email_verified', 'mobile_number', 'gender', 'profile_pic', 'date_of_birth']
 
     def update(self, instance, validated_data):
-        user_data = validated_data.pop('user', None)
-        user_instance = instance.user_profile
+        user_data = validated_data.pop('user', {})
+        instance = super().update(instance, validated_data)
 
         if user_data:
-            user_serializer = CustomUserSerializer(user_instance, data=user_data, partial=True)  # Partial updates for user
-            if user_serializer.is_valid():
-                user_serializer.save()  # Save changes to the user
-            else:
-                raise serializers.ValidationError(user_serializer.errors)
-
-        for attr, value in validated_data.items():
-            setattr(instance, attr, value)
-        instance.save()
+            user = instance.user
+            user.username = user_data.get('username', user.username)
+            user.first_name = user_data.get('first_name', user.first_name)
+            user.last_name = user_data.get('last_name', user.last_name)
+            user.save()
         return instance
