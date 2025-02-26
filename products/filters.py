@@ -1,7 +1,6 @@
 from dataclasses import fields
-
 from django_filters import rest_framework as filters
-from .models import Product, CartItem
+from .models import Product, CartItem, Order
 
 class ProductFilter(filters.FilterSet):
     category = filters.CharFilter(field_name='category__name', lookup_expr='icontains')
@@ -11,3 +10,9 @@ class ProductFilter(filters.FilterSet):
 
     model = Product
     fields = ['category', 'min_price', 'max_price']
+
+class OrderFilter(filters.FilterSet):
+    tracking_number = filters.CharFilter(field_name='tracking_number')
+
+    model = Order
+    fields = ['tracking_number']

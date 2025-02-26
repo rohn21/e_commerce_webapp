@@ -8,7 +8,6 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters
-
 from accounts.permissions import IsOwnerOrReadonly
 from accounts.models import Profile
 from products.models import (Category, Subcategory,
@@ -20,7 +19,7 @@ from products.serializers import (CategorySerializer, SubCategorySerializer,
                                   CartItemSerializer,
                                   OrderSerializer, OrderItemSerializer,
                                   WishlistSerializer, CouponSerializer, AddressSerializer)
-from products.filters import ProductFilter
+from products.filters import ProductFilter, OrderFilter
 from utils.custom_functions import generate_tracking_number
 from django.conf import settings
 from django.urls import reverse
@@ -94,6 +93,17 @@ class ProductRatingAPIView(generics.ListCreateAPIView):
     # def get_queryset(self):
     #     user = self.request.user
     #     return user.ratings.all()
+
+class ProductRatingDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
+    serializer_class = ProductRatingSerializer
+    queryset = Rating.objects.all()
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def perform_create(self, serializer):
+        user = self.request.user
+        serializer.save(user=user)
+
 
 # cart-view
 class CartView(generics.ListCreateAPIView):
@@ -311,7 +321,6 @@ class PaymentSuccessView(generics.UpdateAPIView):
             order_id = checkout_session.metadata.get('order_id')
             payment_status = checkout_session.payment_status
             payment_intent_id = checkout_session.payment_intent
-            print(payment_intent_id)
 
             if payment_status == 'paid':
                 try:
@@ -360,6 +369,7 @@ class PaymentConfirmationView(APIView):
 
                 order.payment_status = 'completed'
                 order.status = Order.SHIPPED
+                # to generate-tracking-number
                 order.tracking_number = generate_tracking_number()
                 order.save()
 
@@ -375,12 +385,13 @@ class PaymentConfirmationView(APIView):
             print(f"Error retrieving session: {e}")
             return Response({"error": f"Error: {e}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-
 # order-history
 class OrderHistioryView(generics.ListAPIView):
     serializer_class = OrderSerializer
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend]
+    filterset_class = OrderFilter
 
     def get_queryset(self):
         user = self.request.user
@@ -434,29 +445,6 @@ class OrderDetailView(generics.RetrieveUpdateAPIView):
 
 class CheckoutPage(TemplateView):
     template_name = 'products/checkout.html'
-
-# @csrf_exempt
-# def payment_success(request):
-#     session_id = request.GET.get('session_id')
-#
-#     if not session_id:
-#         return JsonResponse({"error": "Session ID missing"}, status=400)
-#
-#     try:
-#         checkout_session = stripe.checkout.Session.retrieve(session_id)
-#
-#         # can also retrieve more details like payment status, customer info, etc.
-#         order_id = checkout_session.metadata.get('order_id')
-#         payment_status = checkout_session.payment_status
-#
-#         # Process the order and confirm payment success
-#         if payment_status == 'paid':
-#
-#             pass
-#
-#         return render(request, "products/payment_success.html", {"order_id": order_id, "payment_status": payment_status})
-#     except stripe.error.StripeError as e:
-#         return JsonResponse({"error": str(e)}, status=400)
 
 @csrf_exempt
 def payment_cancel(request):
