@@ -23,7 +23,6 @@ class CustomUserManager(BaseUserManager):
             raise ValueError(_("superuser must have is_staff=True"))
         if extra_fields.get('is_superuser') is not True:
             raise ValueError(_("superuser must have is_superuser=True"))
-        # return self.create_user(email, password, **extra_fields)
         email = self.normalize_email(email)
         user = self.model(email=email, **extra_fields)  # Add other fields
         user.set_password(password)
@@ -95,5 +94,5 @@ class Profile(models.Model):
     class Meta:
         db_table = "user_profile"
 
-    def __str__(self):
-        return self.user.role
+    # def __str__(self):
+    #     return self.user.role

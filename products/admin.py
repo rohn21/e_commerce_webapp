@@ -1,7 +1,7 @@
 from django.contrib import admin
 from .models import (Category, Subcategory,
                      Product, CartItem,
-                    Order, OrderItem,
+                    Order, OrderItem, Coupon,
                     Wishlist,
                     Address,
                      Rating)
@@ -12,6 +12,7 @@ admin.site.register(Subcategory)
 admin.site.register(Product)
 admin.site.register(CartItem)
 admin.site.register(Order)
+admin.site.register(Coupon)
 admin.site.register(OrderItem)
 admin.site.register(Wishlist)
 admin.site.register(Rating)

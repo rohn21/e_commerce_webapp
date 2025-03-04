@@ -153,9 +153,7 @@ EMAIL_HOST = "smtp.gmail.com"
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
 EMAIL_HOST_USER = os.environ.get('FROM_EMAIL')
-# print(EMAIL_HOST_USER)
 EMAIL_HOST_PASSWORD = os.environ.get('APP_PASSWORD')
-# print(EMAIL_HOST_PASSWORD)
 
 DEFAULT_FROM_EMAIL = os.environ.get('FROM_EMAIL')
 
@@ -175,7 +173,7 @@ SIMPLE_JWT = {
 STRIPE_PUBLISHABLE_KEY = os.environ.get('STRIPE_PUBLISHABLE_KEY')
 STRIPE_SECRET_KEY = os.environ.get('STRIPE_SECRET_KEY')
 STRIPE_WEBHOOK_SECRET = os.environ.get('STRIPE_WEBHOOK_SECRET')
-print(STRIPE_PUBLISHABLE_KEY)
+
 
 # Password validation
 # https://docs.djangoproject.com/en/5.1/ref/settings/#auth-password-validators

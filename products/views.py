@@ -3,7 +3,7 @@ from django.shortcuts import render
 from rest_framework import generics, views, viewsets, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from django_filters.rest_framework import DjangoFilterBackend
@@ -17,7 +17,7 @@ from products.models import (Category, Subcategory,
 from products.serializers import (CategorySerializer, SubCategorySerializer,
                                   ProductSerializer, ProductRatingSerializer,
                                   CartItemSerializer,
-                                  OrderSerializer, OrderItemSerializer,
+                                  OrderSerializer,
                                   WishlistSerializer, CouponSerializer, AddressSerializer)
 from products.filters import ProductFilter, OrderFilter
 from utils.custom_functions import generate_tracking_number
@@ -29,6 +29,7 @@ from decimal import Decimal, ROUND_HALF_UP
 import stripe
 
 stripe.api_key = settings.STRIPE_SECRET_KEY
+
 
 # category-view
 class CategoryViewSet(viewsets.ModelViewSet):
@@ -53,6 +54,7 @@ class SubCategoryViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(category_id=category_id)
         return queryset
 
+
 # product-view
 class AddProductAPIView(generics.ListCreateAPIView):
     parser_class = [MultiPartParser, FormParser]
@@ -72,7 +74,7 @@ class AddProductAPIView(generics.ListCreateAPIView):
     #     queryset = Product.objects.all()
     #     return queryset
 
-
+# product-detail
 class ProductDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
     parser_class = [MultiPartParser, FormParser]
     queryset = Product.objects.all()
@@ -80,6 +82,7 @@ class ProductDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
 
+# product-rating
 class ProductRatingAPIView(generics.ListCreateAPIView):
     serializer_class = ProductRatingSerializer
     queryset = Rating.objects.all()
@@ -94,6 +97,7 @@ class ProductRatingAPIView(generics.ListCreateAPIView):
     #     user = self.request.user
     #     return user.ratings.all()
 
+# product-rating-detail
 class ProductRatingDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = ProductRatingSerializer
     queryset = Rating.objects.all()
@@ -133,6 +137,7 @@ class CartView(generics.ListCreateAPIView):
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+
 # cart_item-view
 class CartItemDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = CartItem.objects.all()
@@ -148,6 +153,7 @@ class CartItemDetailView(generics.RetrieveUpdateDestroyAPIView):
             return CartItem(user=user, product_id=product_id, quantity=0)
         return cart_item
 
+
 # clear-cart
 class ClearCartView(views.APIView):
     queryset = CartItem.objects.all()
@@ -159,6 +165,7 @@ class ClearCartView(views.APIView):
         cart_items = user.cart_items.all()
         cart_items.delete()
         return Response({"detail": "Removed all items from the cart"}, status=status.HTTP_204_NO_CONTENT)
+
 
 # checkout
 class OrderCheckoutView(generics.GenericAPIView):
@@ -201,7 +208,8 @@ class OrderCheckoutView(generics.GenericAPIView):
             try:
                 shipping_method = ShippingMethod.objects.get(pk=shipping_method)
             except ShippingMethod.DoesNotExist:
-                return Response({"error": "Shipping method for order not available."}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({"error": "Shipping method for order not available."},
+                                status=status.HTTP_400_BAD_REQUEST)
 
         if not cart_items.exists():
             return Response({"error": "No items in cart"}, status=status.HTTP_400_BAD_REQUEST)
@@ -252,7 +260,7 @@ class OrderCheckoutView(generics.GenericAPIView):
                 },
                 "quantity": item.quantity,
             })
-            # total_price += item.product.price * item.quantity #incorrect
+            # total_price += item.product.price * item.quantity #incorrect for discounted one
             total_price += discounted_price * item.quantity
             print({"total_price": total_price})
         total_price = total_price.quantize(Decimal("0.00"), ROUND_HALF_UP)
@@ -261,7 +269,8 @@ class OrderCheckoutView(generics.GenericAPIView):
         if total_price < 0:
             total_price = Decimal("0.00")
 
-        order = Order.objects.create(user=user, total_price=total_price, status=Order.CHECKOUT, coupon=coupon, address=address)
+        order = Order.objects.create(user=user, total_price=total_price, status=Order.CHECKOUT, coupon=coupon,
+                                     address=address)
 
         for item in cart_items:
             price = Decimal(item.product.price)
@@ -303,7 +312,8 @@ class OrderCheckoutView(generics.GenericAPIView):
 
         return Response({"checkout_url": checkout_session.url}, status=status.HTTP_201_CREATED)
 
-class PaymentSuccessView(generics.UpdateAPIView):
+
+class PaymentSuccessView(generics.UpdateAPIView,):
     serializer_class = OrderSerializer
     queryset = Order.objects.all()
     authentication_classes = [JWTAuthentication]
@@ -346,6 +356,7 @@ class PaymentSuccessView(generics.UpdateAPIView):
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+
 class PaymentConfirmationView(APIView):
     authentication_classes = [JWTAuthentication]
 
@@ -385,6 +396,7 @@ class PaymentConfirmationView(APIView):
             print(f"Error retrieving session: {e}")
             return Response({"error": f"Error: {e}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+
 # order-history
 class OrderHistioryView(generics.ListAPIView):
     serializer_class = OrderSerializer
@@ -403,6 +415,7 @@ class OrderHistioryView(generics.ListAPIView):
         if order_status:
             queryset = queryset.filter(status=order_status)
         return queryset
+
 
 # order-detail and cancel
 class OrderDetailView(generics.RetrieveUpdateAPIView):
@@ -434,21 +447,26 @@ class OrderDetailView(generics.RetrieveUpdateAPIView):
                         else:
                             return Response({'detail': "Refund failed"}, status=status.HTTP_400_BAD_REQUEST)
                     else:
-                        return Response({'detail': "Payment was not successfull, cannot refund!!!"}, status=status.HTTP_400_BAD_REQUEST)
+                        return Response({'detail': "Payment was not successfull, cannot refund!!!"},
+                                        status=status.HTTP_400_BAD_REQUEST)
                 except  stripe.error.StripeError as e:
-                    return Response({'details': f"Stripe error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                    return Response({'details': f"Stripe error: {str(e)}"},
+                                    status=status.HTTP_500_INTERNAL_SERVER_ERROR)
             else:
                 return Response({'details': "No payment information found for this order."},
                                 status=status.HTTP_400_BAD_REQUEST)
 
         return super().patch(request, *args, **kwargs)
 
+
 class CheckoutPage(TemplateView):
     template_name = 'products/checkout.html'
+
 
 @csrf_exempt
 def payment_cancel(request):
     return render(request, "products/payment_cancel.html")
+
 
 class WishlistAPIView(viewsets.ModelViewSet):
     serializer_class = WishlistSerializer
@@ -460,11 +478,13 @@ class WishlistAPIView(viewsets.ModelViewSet):
         user = self.request.user
         serializer.save(user=user)
 
+
 class CouponAPIView(viewsets.ModelViewSet):
     serializer_class = CouponSerializer
     queryset = Coupon.objects.all()
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
+
 
 class AddressAPIView(generics.ListCreateAPIView):
     serializer_class = AddressSerializer
@@ -475,6 +495,7 @@ class AddressAPIView(generics.ListCreateAPIView):
     def perform_create(self, serializer):
         user = self.request.user
         return serializer.save(user=user)
+
 
 class AddressDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = AddressSerializer
