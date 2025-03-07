@@ -11,6 +11,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from dj_rest_auth.registration.views import RegisterView
 from allauth.account.utils import send_email_confirmation
+from allauth.account.signals import user_signed_up
 from accounts.models import Profile
 from accounts.serializers import (
     CustomUserSerializer, UserProfileSerializer, UserDetailsSerializer
@@ -26,6 +27,7 @@ class UserCreateAPIView(RegisterView):
 
     def perform_create(self, serializer):
         user = serializer.save()
+        user_signed_up.send(sender=self.__class__, request=self.request, user=user)  #manual trigger of signal
         return user
 
     def create(self, request, *args, **kwargs):
@@ -33,11 +35,11 @@ class UserCreateAPIView(RegisterView):
         serializer.is_valid(raise_exception=True)
         self.perform_create(serializer)
         # user = self.perform_create(serializer)
-        # send_email_confirmation(request, user)  # when email_verification is required
+        # send_email_confirmation(request, user)  # when ACCOUNT_EMAIL_VERIFICATION is 'mandatory'
 
         headers = self.get_success_headers(serializer.validated_data)
 
-        return Response({"detail": "User registered successfully"}, status=status.HTTP_201_CREATED, headers=headers)
+        return Response({"detail": "Check the inbox and confirm your email !!!"}, status=status.HTTP_201_CREATED, headers=headers)
 
 
 class ProfileAPIView(generics.RetrieveUpdateAPIView):
