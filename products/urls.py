@@ -5,7 +5,7 @@ from products.views import (CategoryViewSet, SubCategoryViewSet,
                             CartView, CartItemDetailView, ClearCartView,
                             OrderCheckoutView, OrderHistioryView, OrderDetailView,
                             WishlistAPIView,
-                            PaymentSuccessView, payment_cancel, PaymentConfirmationView,
+                            PaymentSuccessView, payment_cancel, PaymentConfirmationView, StripeWebhookView,
                             AddressAPIView, AddressDetailAPIView,
                             CheckoutPage, CouponAPIView)
 from rest_framework.routers import DefaultRouter
@@ -38,6 +38,7 @@ urlpatterns = [
     path('payment/success/', PaymentSuccessView.as_view(), name='payment_success'),
     path('payment/cancel/', payment_cancel, name= 'payment_cancel'),
     path('payment/confirmation/', PaymentConfirmationView.as_view(), name= 'payment_confirmation'),
+    path('payment/stripe/webhook/', StripeWebhookView.as_view(), name='stripe-webhook'),
 
     path('address/', AddressAPIView.as_view(), name= 'address'),
     path('address/<int:pk>/', AddressDetailAPIView.as_view(), name= 'address-detail'),

@@ -3,7 +3,7 @@ from django.shortcuts import render
 from rest_framework import generics, views, viewsets, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from django_filters.rest_framework import DjangoFilterBackend
@@ -311,6 +311,51 @@ class OrderCheckoutView(generics.GenericAPIView):
         order.save()
 
         return Response({"checkout_url": checkout_session.url}, status=status.HTTP_201_CREATED)
+
+
+class StripeWebhookView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request, *args, **kwargs):
+        payload = request.body
+        sig_header = request.headers.get("Stripe-Signature", None)
+        endpoint_secret = settings.STRIPE_WEBHOOK_SECRET
+
+        try:
+            event = stripe.Webhook.construct_event(
+                payload, sig_header, endpoint_secret
+            )
+        except ValueError as e:
+            return Response({"error": "Invalid payload"}, status=status.HTTP_400_BAD_REQUEST)
+        except stripe.error.SignatureVerificationError as e:
+            return Response({"error": "Invalid signature"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Handle different event types
+        if event["type"] == "checkout.session.completed":
+            session = event["data"]["object"]
+            order_id = session["metadata"]["order_id"]
+
+            try:
+                order = Order.objects.get(id=order_id)
+                order.payment_status = "completed"
+                order.save()
+                print(f"Payment completed for Order {order.id}")
+            except Order.DoesNotExist:
+                return Response({"error": "Order not found"}, status=status.HTTP_400_BAD_REQUEST)
+
+        elif event["type"] == "checkout.session.expired":
+            session = event["data"]["object"]
+            order_id = session["metadata"]["order_id"]
+
+            try:
+                order = Order.objects.get(id=order_id)
+                order.payment_status = "failed"
+                order.save()
+                print(f"Payment failed for Order {order.id}")
+            except Order.DoesNotExist:
+                return Response({"error": "Order not found"}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response({"message": "Event received"}, status=status.HTTP_200_OK)
 
 
 class PaymentSuccessView(generics.UpdateAPIView,):
