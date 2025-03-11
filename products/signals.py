@@ -42,22 +42,22 @@ def payment_status_change(sender, instance, **kwargs):
                 print("Payment is pending.")
 
 
-@receiver(pre_save, sender=Order)
-def update_order_total(sender, instance, **kwargs):
-    """Updates the order total before saving."""
-    if instance.pk is None:  # Only for new orders
-        total = 0
-        for item in instance.order_items.all():
-            total += item.product.price * item.quantity
-        instance.total_amount = total
-
-        if instance.coupon:
-            if instance.coupon.valid_until >= timezone.now():
-                discount = instance.coupon.discount
-                if instance.coupon.discount_type == 'percentage':
-                    instance.total_amount -= (total * discount / 100)
-                elif instance.coupon.discount_type == 'fixed':
-                    instance.total_amount -= discount
-            else:
-                instance.coupon = None  # coupon expired.
-                instance.save()
+# @receiver(pre_save, sender=Order)
+# def update_order_total(sender, instance, **kwargs):
+#     """Updates the order total before saving."""
+#     if instance.pk is None:  # Only for new orders
+#         total = 0
+#         for item in instance.order_items.all():
+#             total += item.product.price * item.quantity
+#         instance.total_amount = total
+#
+#         if instance.coupon:
+#             if instance.coupon.valid_until >= timezone.now():
+#                 discount = instance.coupon.discount
+#                 if instance.coupon.discount_type == 'percentage':
+#                     instance.total_amount -= (total * discount / 100)
+#                 elif instance.coupon.discount_type == 'fixed':
+#                     instance.total_amount -= discount
+#             else:
+#                 instance.coupon = None  # coupon expired.
+#                 instance.save()
