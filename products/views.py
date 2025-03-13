@@ -330,14 +330,15 @@ class StripeWebhookView(APIView):
         except stripe.error.SignatureVerificationError as e:
             return Response({"error": "Invalid signature"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Handle different event types
         if event["type"] == "checkout.session.completed":
             session = event["data"]["object"]
             order_id = session["metadata"]["order_id"]
+            payment_intent_id = session.get('payment_intent')
 
             try:
                 order = Order.objects.get(id=order_id)
                 order.payment_status = "completed"
+                order.payment_intent_id = payment_intent_id
                 order.save()
                 print(f"Payment completed for Order {order.id}")
             except Order.DoesNotExist:
